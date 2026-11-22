@@ -161,8 +161,8 @@ async def send_food_item_card(
     # Step 3: Buffered download fallback (guarantees photo is delivered)
     try:
         async with aiohttp.ClientSession() as session:
-            headers = {"User-Agent": "ASCHIBot/3.0"}
-            async with session.get(photo_url, headers=headers, timeout=aiohttp.ClientTimeout(total=6)) as resp:
+            headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
+            async with session.get(photo_url, headers=headers, timeout=aiohttp.ClientTimeout(total=8)) as resp:
                 if resp.status == 200:
                     image_bytes = await resp.read()
                     buffered_photo = BufferedInputFile(image_bytes, filename=f"{food['name'].replace(' ', '_')}.jpg")

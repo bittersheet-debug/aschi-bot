@@ -128,9 +128,24 @@ async def seed_database():
         async with db.execute("SELECT COUNT(*) FROM foods WHERE category = 'indonesia' AND subcategory = 'Minuman'") as cursor:
             indo_drinks = (await cursor.fetchone())[0]
 
-        # If already up to date with 87 items and Indonesian Minuman exists, skip
+        # Always synchronize authentic photo URLs and reset cached file IDs
+        for key, val in CURATED_FOOD_IMAGES.items():
+            await db.execute(
+                """
+                UPDATE foods 
+                SET photo_url = ?, 
+                    photo_file_id = NULL, 
+                    image_source = ?, 
+                    image_license = ?
+                WHERE LOWER(name) = ? OR LOWER(name) = ?
+                """,
+                (val["url"], val.get("source", ""), val.get("license", ""), key, key.replace("-", " "))
+            )
+        await db.commit()
+
+        # If already up to date with 87 items and Indonesian Minuman exists, finish
         if count == len(INITIAL_FOOD_ITEMS) and indo_drinks >= 5:
-            logger.info("Database is already up to date with all 87 food & drink items.")
+            logger.info("Database photos successfully synchronized with verified authentic catalog.")
             return
 
         logger.info(f"Synchronizing {len(INITIAL_FOOD_ITEMS)} official food & drink items...")

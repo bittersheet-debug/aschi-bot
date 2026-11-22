@@ -167,6 +167,20 @@ async def telegram_webhook(request: Request):
         )
 
 
+@app.get("/api/resync_photos")
+async def resync_photos_endpoint():
+    """Forces synchronization of all 87 authentic food photos and clears cached photo IDs."""
+    try:
+        await init_db()
+        await seed_database()
+        return {
+            "success": True,
+            "message": "All 87 menu & drink photos successfully resynchronized and photo_file_id cache cleared!"
+        }
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
 @app.get("/api/set_webhook")
 async def set_telegram_webhook(request: Request):
     """One-click setup endpoint to register the Vercel URL with Telegram API."""

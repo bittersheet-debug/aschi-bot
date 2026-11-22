@@ -1,0 +1,14 @@
+services:
+  aschi-bot:
+    build: .
+    container_name: aschi_telegram_bot
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      - aschi_data:/app
+    environment:
+      - PYTHONUNBUFFERED=1
+
+volumes:
+  aschi_data:

@@ -1,0 +1,13 @@
+__pycache__
+*.pyc
+*.log
+.git
+.env.example
+test_aschi_bot.py
+start_bot.bat
+stop_bot.bat
+start_hidden.vbs
+install_windows_startup.bat
+deploy_vps.sh
+aschi-bot.service
+backups/

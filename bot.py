@@ -34,14 +34,13 @@ logger = logging.getLogger("aschi_bot")
 
 
 async def setup_bot_commands(bot: Bot):
-    """Registers official bot commands list in the Telegram Menu."""
+    """Registers official bot commands list in the Telegram Menu (hides /maurits from public menu)."""
     commands = [
         BotCommand(command="start", description="Mulai ASCHI BOT"),
         BotCommand(command="help", description="Panduan & daftar command"),
         BotCommand(command="indonesia", description="Katalog Indonesian Food 🇮🇩"),
         BotCommand(command="korean", description="Katalog Korean Food 🇰🇷"),
         BotCommand(command="foreign", description="Katalog Foreign Food 🌎"),
-        BotCommand(command="maurits", description="Admin Settings"),
         BotCommand(command="ban", description="Blokir anggota grup"),
         BotCommand(command="mute", description="Batasi anggota grup"),
         BotCommand(command="kick", description="Keluarkan anggota grup"),

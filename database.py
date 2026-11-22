@@ -19,6 +19,15 @@ from config import (
 )
 
 
+DEFAULT_GROUP_WELCOME_TEXT = (
+    "ㅤㅤㅤㅤ𓄲 𓂃 𝐖𝐄𝐋𝐂𝐎𝐌𝐄, @USERNAME 𓂃\n\n"
+    "Welcome to Aschen, a space we have prepared with warmth and care. We’re delighted to have you here, so please make yourself comfortable, enjoy the atmosphere, and feel free to explore everything we have prepared for you.\n\n"
+    "If you have any questions or need assistance, our staff will be happy to help.\n\n"
+    "We hope you enjoy your stay at Aschen. ♡\n\n"
+    "ㅤㅤㅤㅤ𓆩 𝐀𝐒𝐂𝐇𝐄𝐍 𓆪"
+)
+
+
 def format_command(raw_name: str) -> str:
     """Formats a food name into a valid Telegram command like /telur or /ayam_bakar."""
     clean = re.sub(r"[^a-zA-Z0-9_]", "_", raw_name.strip().lower())
@@ -73,6 +82,21 @@ async def init_db():
                 reason TEXT,
                 duration TEXT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+            """
+        )
+
+        # Muted members table
+        await db.execute(
+            """
+            CREATE TABLE IF NOT EXISTS muted_members (
+                group_id INTEGER,
+                user_id INTEGER,
+                muted_by INTEGER,
+                admin_name TEXT,
+                muted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                is_active INTEGER DEFAULT 1,
+                PRIMARY KEY (group_id, user_id)
             )
             """
         )
@@ -159,6 +183,13 @@ async def init_db():
             "btn_group_label": "GROUP MANAGEMENT",
             "wedding_menu_title": "Wedding Menu Service",
             "wedding_menu_desc": "Layanan hidangan pernikahan eksklusif dari ASCHEN EVENT ORGANIZER.",
+            "group_welcome_enabled": "1",
+            "group_welcome_text": DEFAULT_GROUP_WELCOME_TEXT,
+            "group_welcome_media_type": "none",
+            "group_welcome_photo_file_id": "",
+            "group_welcome_gift_file_id": "",
+            "group_welcome_video_file_id": "",
+            "group_welcome_duration": "5",
         }
 
         for key, value in default_settings.items():
@@ -195,6 +226,29 @@ async def register_user(user_id: int, username: Optional[str], full_name: str):
             (user_id, username or "", full_name)
         )
         await db.commit()
+
+
+async def get_user_by_username(username: str) -> Optional[Dict[str, Any]]:
+    clean = username.lstrip("@").strip().lower()
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            "SELECT * FROM users WHERE LOWER(username) = ? LIMIT 1",
+            (clean,)
+        ) as cursor:
+            row = await cursor.fetchone()
+            return dict(row) if row else None
+
+
+async def get_user_by_id(user_id: int) -> Optional[Dict[str, Any]]:
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            "SELECT * FROM users WHERE user_id = ? LIMIT 1",
+            (user_id,)
+        ) as cursor:
+            row = await cursor.fetchone()
+            return dict(row) if row else None
 
 
 # ---------------- GROUP FUNCTIONS ----------------
@@ -270,6 +324,55 @@ async def get_recent_moderation_logs(limit: int = 15) -> List[Dict[str, Any]]:
         ) as cursor:
             rows = await cursor.fetchall()
             return [dict(row) for row in rows]
+
+
+# ---------------- MUTED MEMBERS TRACKING ----------------
+async def set_member_muted(group_id: int, user_id: int, muted_by: int, admin_name: str):
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            """
+            INSERT INTO muted_members (group_id, user_id, muted_by, admin_name, muted_at, is_active)
+            VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, 1)
+            ON CONFLICT(group_id, user_id) DO UPDATE SET
+                muted_by = excluded.muted_by,
+                admin_name = excluded.admin_name,
+                muted_at = CURRENT_TIMESTAMP,
+                is_active = 1
+            """,
+            (group_id, user_id, muted_by, admin_name)
+        )
+        await db.commit()
+
+
+async def set_member_unmuted(group_id: int, user_id: int):
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "UPDATE muted_members SET is_active = 0 WHERE group_id = ? AND user_id = ?",
+            (group_id, user_id)
+        )
+        await db.commit()
+
+
+async def is_member_muted(group_id: int, user_id: int) -> bool:
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute(
+            "SELECT is_active FROM muted_members WHERE group_id = ? AND user_id = ? LIMIT 1",
+            (group_id, user_id)
+        ) as cursor:
+            row = await cursor.fetchone()
+            return bool(row and row[0] == 1)
+
+
+async def get_muted_record(group_id: int, user_id: int) -> Optional[Dict[str, Any]]:
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            "SELECT * FROM muted_members WHERE group_id = ? AND user_id = ? LIMIT 1",
+            (group_id, user_id)
+        ) as cursor:
+            row = await cursor.fetchone()
+            return dict(row) if row else None
+
 
 
 # ---------------- FOODS CRUD ----------------

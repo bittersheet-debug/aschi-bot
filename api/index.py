@@ -194,6 +194,11 @@ async def set_telegram_webhook(request: Request):
     try:
         await bot.delete_webhook(drop_pending_updates=True)
         success = await bot.set_webhook(url=webhook_url, drop_pending_updates=True)
+        try:
+            from bot import setup_bot_commands
+            await setup_bot_commands(bot)
+        except Exception:
+            pass
         return {
             "success": success,
             "message": "Webhook successfully registered to Telegram!",

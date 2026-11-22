@@ -52,6 +52,7 @@ from database import (
     remove_admin,
     backup_database,
     format_command,
+    DEFAULT_GROUP_WELCOME_TEXT,
 )
 from captions import generate_aschen_caption
 from image_search import search_food_image
@@ -59,6 +60,7 @@ from keyboards import (
     build_admin_dashboard_keyboard,
     build_admin_back_keyboard,
     build_cancel_keyboard,
+    build_welcome_mgmt_keyboard,
 )
 
 logger = logging.getLogger(__name__)
@@ -114,6 +116,15 @@ class AdminAccessState(StatesGroup):
     waiting_user_id = State()
 
 
+class GroupWelcomeState(StatesGroup):
+    waiting_welcome_text = State()
+    waiting_welcome_photo = State()
+    waiting_welcome_gift = State()
+    waiting_welcome_video = State()
+    waiting_welcome_duration = State()
+
+
+
 # ---------------- ACCESS CONTROL HELPER ----------------
 
 async def ensure_admin(event: Message | CallbackQuery) -> bool:
@@ -151,7 +162,8 @@ async def cmd_maurits(message: Message, state: FSMContext):
         f"<i>Pusat Pengaturan Resmi ASCHEN EVENT ORGANIZER</i>\n\n"
         f"Selamat datang, <b>{message.from_user.full_name}</b>.\n"
         f"Silakan pilih menu pengaturan di bawah ini:\n\n"
-        f"• 📝 <b>A. Welcome Settings</b> — Pesan sambutan & 3 tombol awal\n"
+        f"• 🎉 <b>WELCOME MANAGEMENT</b> — Sambutan otomatis grup (Teks, Foto, GIF, Video, Durasi)\n"
+        f"• 📝 <b>A. Welcome Settings (/start)</b> — Pesan sambutan & 3 tombol awal\n"
         f"• 🍽️ <b>B. Menu Settings</b> — Layanan Wedding Menu & 3 kategori utama\n"
         f"• 🍲 <b>C. Food Management</b> — Tambah, edit command, harga, status\n"
         f"• 🖼️ <b>D. Food Photo Settings</b> — Saklar auto search & upload foto manual\n"
@@ -191,6 +203,280 @@ async def cb_fsm_cancel(callback: CallbackQuery, state: FSMContext):
     await state.clear()
     await callback.answer("Pengaturan dibatalkan.")
     await cb_admin_main(callback, state)
+
+
+# =========================================================
+# WELCOME MANAGEMENT (GROUP AUTOMATIC WELCOME SYSTEM)
+# =========================================================
+
+async def render_grp_welcome_panel(callback: CallbackQuery):
+    is_enabled = (await get_setting("group_welcome_enabled", "1")) == "1"
+    welcome_text = await get_setting("group_welcome_text", DEFAULT_GROUP_WELCOME_TEXT)
+    media_type = await get_setting("group_welcome_media_type", "none")
+    duration = await get_setting("group_welcome_duration", "5")
+
+    status_label = "🟢 AKTIF" if is_enabled else "🔴 NONAKTIF"
+    media_labels = {
+        "none": "📄 Teks Saja",
+        "photo": "🖼️ Foto",
+        "gift": "🎁 Gift / GIF",
+        "video": "📹 Video",
+    }
+    media_label = media_labels.get(media_type, "📄 Teks Saja")
+
+    text = (
+        f"{TITLE_DECOR}\n\n"
+        f"🎉 <b>WELCOME MANAGEMENT (/maurits)</b>\n"
+        f"<i>Pengaturan Sambutan Otomatis Grup ASCHEN</i>\n\n"
+        f"• <b>Status Welcome:</b> {status_label}\n"
+        f"• <b>Tipe Media Aktif:</b> {media_label}\n"
+        f"• <b>Durasi Hapus Otomatis:</b> {duration} detik\n\n"
+        f"• <b>Format Welcome Aktif:</b>\n"
+        f"<blockquote>{welcome_text}</blockquote>\n\n"
+        f"<i>Pesan welcome otomatis terhapus setelah {duration} detik agar grup tetap rapi.</i>\n\n"
+        f"{FOOTER_DECOR}"
+    )
+
+    markup = build_welcome_mgmt_keyboard(is_enabled=is_enabled, media_type=media_type)
+    try:
+        await callback.message.edit_text(text, reply_markup=markup, parse_mode="HTML")
+    except Exception:
+        await callback.message.answer(text, reply_markup=markup, parse_mode="HTML")
+
+
+@router.callback_query(F.data == "admin_grp_welcome:root")
+async def cb_admin_grp_welcome_root(callback: CallbackQuery, state: FSMContext):
+    await state.clear()
+    if not await ensure_admin(callback):
+        return
+    await callback.answer()
+    await render_grp_welcome_panel(callback)
+
+
+@router.callback_query(F.data == "admin_grp_welcome:enable")
+async def cb_admin_grp_welcome_enable(callback: CallbackQuery):
+    if not await ensure_admin(callback):
+        return
+    await set_setting("group_welcome_enabled", "1")
+    await callback.answer("✅ Welcome otomatis grup DIAKTIFKAN!", show_alert=True)
+    await render_grp_welcome_panel(callback)
+
+
+@router.callback_query(F.data == "admin_grp_welcome:disable")
+async def cb_admin_grp_welcome_disable(callback: CallbackQuery):
+    if not await ensure_admin(callback):
+        return
+    await set_setting("group_welcome_enabled", "0")
+    await callback.answer("❌ Welcome otomatis grup DINONAKTIFKAN!", show_alert=True)
+    await render_grp_welcome_panel(callback)
+
+
+@router.callback_query(F.data == "admin_grp_welcome:edit_text")
+async def cb_admin_grp_welcome_edit_text(callback: CallbackQuery, state: FSMContext):
+    if not await ensure_admin(callback):
+        return
+    await state.set_state(GroupWelcomeState.waiting_welcome_text)
+    await callback.answer()
+    prompt = (
+        "<b>PENGATURAN TEKS WELCOME</b>\n\n"
+        "Ketikkan teks pesan Welcome baru untuk anggota yang baru bergabung di grup ASCHEN.\n\n"
+        "Gunakan kode <code>@USERNAME</code> di bagian teks yang ingin otomatis diganti "
+        "dengan username anggota baru (atau nama profil jika tidak memiliki username).\n\n"
+        "Kirim teks baru Anda:"
+    )
+    await callback.message.edit_text(prompt, reply_markup=build_cancel_keyboard(), parse_mode="HTML")
+
+
+@router.message(GroupWelcomeState.waiting_welcome_text)
+async def process_group_welcome_text(message: Message, state: FSMContext):
+    if not message.text:
+        await message.reply("Mohon kirimkan pesan teks yang valid.")
+        return
+    await set_setting("group_welcome_text", message.text.strip())
+    await state.clear()
+    await message.reply(
+        "✅ Teks Welcome berhasil diperbarui dan tersimpan permanen!",
+        reply_markup=build_admin_back_keyboard("admin_grp_welcome:root")
+    )
+
+
+@router.callback_query(F.data == "admin_grp_welcome:set_photo")
+async def cb_admin_grp_welcome_set_photo(callback: CallbackQuery, state: FSMContext):
+    if not await ensure_admin(callback):
+        return
+    await state.set_state(GroupWelcomeState.waiting_welcome_photo)
+    await callback.answer()
+    prompt = (
+        "<b>PENGATURAN FOTO WELCOME</b>\n\n"
+        "Kirimkan foto (gambar) yang ingin digunakan sebagai media Welcome grup ASCHEN.\n"
+        "Foto ini akan dikirim otomatis dengan caption sambutan setiap kali ada anggota baru."
+    )
+    await callback.message.edit_text(prompt, reply_markup=build_cancel_keyboard(), parse_mode="HTML")
+
+
+@router.message(GroupWelcomeState.waiting_welcome_photo)
+async def process_group_welcome_photo(message: Message, state: FSMContext):
+    if not message.photo:
+        await message.reply("Mohon kirimkan foto/gambar yang valid, atau tekan Batal.", reply_markup=build_cancel_keyboard())
+        return
+    file_id = message.photo[-1].file_id
+    await set_setting("group_welcome_photo_file_id", file_id)
+    await set_setting("group_welcome_media_type", "photo")
+    await state.clear()
+    await message.reply(
+        "✅ Foto Welcome berhasil disimpan dan diaktifkan!",
+        reply_markup=build_admin_back_keyboard("admin_grp_welcome:root")
+    )
+
+
+@router.callback_query(F.data == "admin_grp_welcome:set_gift")
+async def cb_admin_grp_welcome_set_gift(callback: CallbackQuery, state: FSMContext):
+    if not await ensure_admin(callback):
+        return
+    await state.set_state(GroupWelcomeState.waiting_welcome_gift)
+    await callback.answer()
+    prompt = (
+        "<b>PENGATURAN WELCOME GIFT (GIF / ANIMASI)</b>\n\n"
+        "Kirimkan file animasi GIF / Welcome Gift yang ingin ditampilkan ketika anggota baru bergabung.\n"
+        "Bot akan otomatis menyertakan caption sambutan."
+    )
+    await callback.message.edit_text(prompt, reply_markup=build_cancel_keyboard(), parse_mode="HTML")
+
+
+@router.message(GroupWelcomeState.waiting_welcome_gift)
+async def process_group_welcome_gift(message: Message, state: FSMContext):
+    file_id = None
+    if message.animation:
+        file_id = message.animation.file_id
+    elif message.document and message.document.mime_type and "gif" in message.document.mime_type:
+        file_id = message.document.file_id
+
+    if not file_id:
+        await message.reply("Mohon kirimkan file animasi GIF atau Gift yang valid.", reply_markup=build_cancel_keyboard())
+        return
+
+    await set_setting("group_welcome_gift_file_id", file_id)
+    await set_setting("group_welcome_media_type", "gift")
+    await state.clear()
+    await message.reply(
+        "✅ Welcome Gift (GIF) berhasil disimpan dan diaktifkan!",
+        reply_markup=build_admin_back_keyboard("admin_grp_welcome:root")
+    )
+
+
+@router.callback_query(F.data == "admin_grp_welcome:set_video")
+async def cb_admin_grp_welcome_set_video(callback: CallbackQuery, state: FSMContext):
+    if not await ensure_admin(callback):
+        return
+    await state.set_state(GroupWelcomeState.waiting_welcome_video)
+    await callback.answer()
+    prompt = (
+        "<b>PENGATURAN VIDEO WELCOME</b>\n\n"
+        "Kirimkan video yang ingin digunakan sebagai media Welcome grup ASCHEN.\n"
+        "Bot akan otomatis memutar video beserta caption sambutan."
+    )
+    await callback.message.edit_text(prompt, reply_markup=build_cancel_keyboard(), parse_mode="HTML")
+
+
+@router.message(GroupWelcomeState.waiting_welcome_video)
+async def process_group_welcome_video(message: Message, state: FSMContext):
+    if not message.video:
+        await message.reply("Mohon kirimkan file video yang valid.", reply_markup=build_cancel_keyboard())
+        return
+    file_id = message.video.file_id
+    await set_setting("group_welcome_video_file_id", file_id)
+    await set_setting("group_welcome_media_type", "video")
+    await state.clear()
+    await message.reply(
+        "✅ Video Welcome berhasil disimpan dan diaktifkan!",
+        reply_markup=build_admin_back_keyboard("admin_grp_welcome:root")
+    )
+
+
+@router.callback_query(F.data == "admin_grp_welcome:reset_media")
+async def cb_admin_grp_welcome_reset_media(callback: CallbackQuery):
+    if not await ensure_admin(callback):
+        return
+    await set_setting("group_welcome_media_type", "none")
+    await callback.answer("Media welcome direset ke teks saja.", show_alert=True)
+    await render_grp_welcome_panel(callback)
+
+
+@router.callback_query(F.data == "admin_grp_welcome:set_duration")
+async def cb_admin_grp_welcome_set_duration(callback: CallbackQuery, state: FSMContext):
+    if not await ensure_admin(callback):
+        return
+    await state.set_state(GroupWelcomeState.waiting_welcome_duration)
+    await callback.answer()
+    prompt = (
+        "<b>PENGATURAN DURASI WELCOME</b>\n\n"
+        "Masukkan durasi waktu otomatis penghapusan pesan welcome dalam satuan detik.\n"
+        "Default sistem adalah <b>5</b> detik.\n\n"
+        "Ketik angka detik (contoh: 5):"
+    )
+    await callback.message.edit_text(prompt, reply_markup=build_cancel_keyboard(), parse_mode="HTML")
+
+
+@router.message(GroupWelcomeState.waiting_welcome_duration)
+async def process_group_welcome_duration(message: Message, state: FSMContext):
+    raw = message.text.strip() if message.text else ""
+    if not raw.isdigit() or int(raw) < 1:
+        await message.reply("Durasi harus berupa bilangan bulat positif dalam detik (minimal 1 detik). Silakan coba lagi:")
+        return
+
+    sec = int(raw)
+    await set_setting("group_welcome_duration", str(sec))
+    await state.clear()
+    await message.reply(
+        f"✅ Durasi penghapusan welcome berhasil diatur menjadi {sec} detik!",
+        reply_markup=build_admin_back_keyboard("admin_grp_welcome:root")
+    )
+
+
+@router.callback_query(F.data == "admin_grp_welcome:preview")
+async def cb_admin_grp_welcome_preview(callback: CallbackQuery):
+    if not await ensure_admin(callback):
+        return
+    await callback.answer("Menampilkan preview welcome...")
+
+    template = await get_setting("group_welcome_text", DEFAULT_GROUP_WELCOME_TEXT)
+    media_type = await get_setting("group_welcome_media_type", "none")
+    photo_id = await get_setting("group_welcome_photo_file_id", "")
+    gift_id = await get_setting("group_welcome_gift_file_id", "")
+    video_id = await get_setting("group_welcome_video_file_id", "")
+
+    admin_tag = f"@{callback.from_user.username}" if callback.from_user.username else callback.from_user.full_name
+    preview_text = template.replace("@USERNAME", admin_tag)
+
+    header = "👁️ <b>[ PREVIEW WELCOME ]</b>\n\n"
+
+    try:
+        if media_type == "photo" and photo_id:
+            await callback.message.answer_photo(
+                photo=photo_id,
+                caption=header + preview_text,
+                reply_markup=build_admin_back_keyboard("admin_grp_welcome:root")
+            )
+        elif media_type == "gift" and gift_id:
+            await callback.message.answer_animation(
+                animation=gift_id,
+                caption=header + preview_text,
+                reply_markup=build_admin_back_keyboard("admin_grp_welcome:root")
+            )
+        elif media_type == "video" and video_id:
+            await callback.message.answer_video(
+                video=video_id,
+                caption=header + preview_text,
+                reply_markup=build_admin_back_keyboard("admin_grp_welcome:root")
+            )
+        else:
+            await callback.message.answer(
+                header + preview_text,
+                reply_markup=build_admin_back_keyboard("admin_grp_welcome:root")
+            )
+    except Exception as e:
+        logger.error(f"Error previewing welcome: {e}")
+        await callback.message.answer(f"Gagal menampilkan preview: {e}")
 
 
 # =========================================================

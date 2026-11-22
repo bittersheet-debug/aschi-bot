@@ -54,7 +54,8 @@ def build_admin_dashboard_keyboard() -> InlineKeyboardMarkup:
     """Main Admin Dashboard Navigation for /maurits."""
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="📝 A. Welcome Settings", callback_data="admin_welcome:root")],
+            [InlineKeyboardButton(text="🎉 WELCOME MANAGEMENT", callback_data="admin_grp_welcome:root")],
+            [InlineKeyboardButton(text="📝 A. Welcome Settings (/start)", callback_data="admin_welcome:root")],
             [InlineKeyboardButton(text="🍽️ B. Menu & Wedding Settings", callback_data="admin_menu:root")],
             [InlineKeyboardButton(text="🍲 C. Food Management (Add/Edit)", callback_data="admin_food:root")],
             [InlineKeyboardButton(text="🖼️ D. Food Photo Settings", callback_data="admin_img:root")],
@@ -66,6 +67,35 @@ def build_admin_dashboard_keyboard() -> InlineKeyboardMarkup:
             [InlineKeyboardButton(text="🏠 TUTUP DASHBOARD", callback_data="nav:home")],
         ]
     )
+
+
+def build_welcome_mgmt_keyboard(is_enabled: bool = True, media_type: str = "none") -> InlineKeyboardMarkup:
+    """Controls for /maurits -> WELCOME MANAGEMENT."""
+    toggle_btn = (
+        InlineKeyboardButton(text="🔴 Disable Welcome", callback_data="admin_grp_welcome:disable")
+        if is_enabled
+        else InlineKeyboardButton(text="🟢 Enable Welcome", callback_data="admin_grp_welcome:enable")
+    )
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [toggle_btn],
+            [InlineKeyboardButton(text="📝 Welcome Text", callback_data="admin_grp_welcome:edit_text")],
+            [
+                InlineKeyboardButton(text="🖼️ Welcome Photo", callback_data="admin_grp_welcome:set_photo"),
+                InlineKeyboardButton(text="🎁 Welcome Gift", callback_data="admin_grp_welcome:set_gift"),
+            ],
+            [
+                InlineKeyboardButton(text="📹 Welcome Video", callback_data="admin_grp_welcome:set_video"),
+                InlineKeyboardButton(text="⏱️ Welcome Duration", callback_data="admin_grp_welcome:set_duration"),
+            ],
+            [
+                InlineKeyboardButton(text="👁️ Preview Welcome", callback_data="admin_grp_welcome:preview"),
+                InlineKeyboardButton(text="📄 Reset ke Teks Saja", callback_data="admin_grp_welcome:reset_media"),
+            ],
+            [InlineKeyboardButton(text="🔙 BACK", callback_data="admin:main")],
+        ]
+    )
+
 
 
 def build_admin_back_keyboard(parent_callback: str = "admin:main") -> InlineKeyboardMarkup:

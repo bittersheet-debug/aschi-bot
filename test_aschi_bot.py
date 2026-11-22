@@ -28,7 +28,7 @@ from keyboards import (
     build_start_keyboard,
     build_food_order_keyboard,
 )
-from moderation import parse_duration
+from moderation import format_user_tag, get_admin_tag
 from admin_dashboard import DENIED_TEXT
 from food_menu import generate_category_command_list
 
@@ -139,6 +139,74 @@ class TestAschiBotV3(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(await database.is_admin_or_owner(999999999))
         self.assertFalse(await database.is_admin_or_owner(123456789))
         self.assertEqual(DENIED_TEXT, "ACCESS DENIED. ADMIN ONLY.")
+
+    # 7. Test Muted Members Tracking in Database
+    async def test_muted_members_tracking(self):
+        group_id = -100123456789
+        user_id = 555666777
+
+        # Initially not muted
+        self.assertFalse(await database.is_member_muted(group_id, user_id))
+
+        # Mute user
+        await database.set_member_muted(group_id, user_id, 999999999, "@AdminMaurits")
+        self.assertTrue(await database.is_member_muted(group_id, user_id))
+
+        rec = await database.get_muted_record(group_id, user_id)
+        self.assertIsNotNone(rec)
+        self.assertEqual(rec["admin_name"], "@AdminMaurits")
+
+        # Unmute user
+        await database.set_member_unmuted(group_id, user_id)
+        self.assertFalse(await database.is_member_muted(group_id, user_id))
+
+    # 8. Test User Registration and Lookup for Moderation (@username & numeric ID)
+    async def test_user_resolution_and_registration(self):
+        await database.register_user(111222, "JohnDoe", "John Doe")
+
+        by_un = await database.get_user_by_username("johndoe")
+        self.assertIsNotNone(by_un)
+        self.assertEqual(by_un["user_id"], 111222)
+
+        by_un_at = await database.get_user_by_username("@johndoe")
+        self.assertIsNotNone(by_un_at)
+        self.assertEqual(by_un_at["user_id"], 111222)
+
+        by_id = await database.get_user_by_id(111222)
+        self.assertIsNotNone(by_id)
+        self.assertEqual(by_id["username"], "JohnDoe")
+
+    # 9. Test Group Welcome Settings and Template
+    async def test_group_welcome_settings(self):
+        # Default welcome text check
+        default_text = await database.get_setting("group_welcome_text", database.DEFAULT_GROUP_WELCOME_TEXT)
+        self.assertIn("𓄲 𓂃 𝐖𝐄𝐋𝐂𝐎𝐌𝐄, @USERNAME 𓂃", default_text)
+        self.assertIn("𓆩 𝐀𝐒𝐂𝐇𝐄𝐍 𓆪", default_text)
+
+        # Duration setting check (default 5s)
+        duration = await database.get_setting("group_welcome_duration", "5")
+        self.assertEqual(duration, "5")
+
+        # Replacement test
+        replaced = default_text.replace("@USERNAME", "@new_member")
+        self.assertIn("@new_member", replaced)
+        self.assertNotIn("@USERNAME", replaced)
+
+    # 10. Test Welcome Management Keyboard
+    def test_welcome_mgmt_keyboard(self):
+        from keyboards import build_welcome_mgmt_keyboard
+        kb = build_welcome_mgmt_keyboard(is_enabled=True, media_type="photo")
+        buttons = [btn for row in kb.inline_keyboard for btn in row]
+        button_texts = [b.text for b in buttons]
+
+        self.assertIn("🔴 Disable Welcome", button_texts)
+        self.assertIn("📝 Welcome Text", button_texts)
+        self.assertIn("🖼️ Welcome Photo", button_texts)
+        self.assertIn("🎁 Welcome Gift", button_texts)
+        self.assertIn("📹 Welcome Video", button_texts)
+        self.assertIn("⏱️ Welcome Duration", button_texts)
+        self.assertIn("👁️ Preview Welcome", button_texts)
+
 
 
 if __name__ == "__main__":

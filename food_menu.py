@@ -25,6 +25,10 @@ from database import (
     get_foods_by_category,
     get_food_by_id,
     update_food_file_id,
+    is_catalog_enabled,
+    set_catalog_status,
+    get_active_catalogs,
+    is_admin_or_owner,
 )
 from captions import generate_aschen_caption
 from keyboards import build_food_order_keyboard
@@ -86,9 +90,41 @@ async def generate_category_command_list(category: str) -> str:
     return "\n".join(lines)
 
 
+# ---------------- MENU OVERVIEW COMMAND (/menu) ----------------
+
+@router.message(Command("menu", ignore_case=True))
+@router.message(Command("menuaschi", ignore_case=True))
+async def cmd_menu(message: Message):
+    """
+    Displays list of currently active catalogs.
+    If all catalogs are OFF, displays: 'Saat ini katalog belum tersedia.'
+    Example format when active:
+    - Indonesia
+    - Korean
+    """
+    active = await get_active_catalogs()
+    if not active:
+        await message.reply("Saat ini katalog belum tersedia.")
+        return
+
+    name_map = {
+        "indonesia": "Indonesia",
+        "korean": "Korean",
+        "foreign": "Foreign",
+    }
+
+    lines = [f"- {name_map.get(cat, cat.capitalize())}" for cat in active]
+    await message.reply("\n".join(lines))
+
+
+# ---------------- CATEGORY COMMAND HANDLERS ----------------
+
 @router.message(Command("indonesia", ignore_case=True))
 async def cmd_indonesia(message: Message):
     """Displays Indonesian Food commands grouped by Makanan, Dessert, Minuman."""
+    if not await is_catalog_enabled("indonesia"):
+        await message.reply("Maaf, katalog ini sedang tidak tersedia.")
+        return
     text = await generate_category_command_list("indonesia")
     await message.reply(text, parse_mode="HTML")
 
@@ -96,6 +132,9 @@ async def cmd_indonesia(message: Message):
 @router.message(Command("korean", ignore_case=True))
 async def cmd_korean(message: Message):
     """Displays Korean Food commands grouped by Makanan, Dessert, Minuman."""
+    if not await is_catalog_enabled("korean"):
+        await message.reply("Maaf, katalog ini sedang tidak tersedia.")
+        return
     text = await generate_category_command_list("korean")
     await message.reply(text, parse_mode="HTML")
 
@@ -103,8 +142,59 @@ async def cmd_korean(message: Message):
 @router.message(Command("foreign", ignore_case=True))
 async def cmd_foreign(message: Message):
     """Displays Foreign Food commands grouped by Makanan, Dessert, Minuman."""
+    if not await is_catalog_enabled("foreign"):
+        await message.reply("Maaf, katalog ini sedang tidak tersedia.")
+        return
     text = await generate_category_command_list("foreign")
     await message.reply(text, parse_mode="HTML")
+
+
+# ---------------- ADMIN CATALOG CONTROL COMMANDS ----------------
+
+async def process_set_catalog_command(message: Message, category: str, display_name: str):
+    """
+    Handles /setindonesia on|off, /setkorean on|off, /setforeign on|off.
+    Restricted to authorized admins only.
+    Non-admins receive: 'Access Denied — Admin Only.'
+    """
+    if not await is_admin_or_owner(message.from_user.id):
+        await message.reply("Access Denied — Admin Only.")
+        return
+
+    args = message.text.split()[1:] if message.text else []
+    if not args or args[0].lower() not in ["on", "off"]:
+        curr_status = "ON" if await is_catalog_enabled(category) else "OFF"
+        await message.reply(
+            f"Format command: <code>/set{category} on</code> atau <code>/set{category} off</code>\n"
+            f"Status katalog {display_name} saat ini: <b>{curr_status}</b>",
+            parse_mode="HTML"
+        )
+        return
+
+    action = args[0].lower()
+    new_state = (action == "on")
+    await set_catalog_status(category, new_state)
+    status_label = "diaktifkan (ON)" if new_state else "dinonaktifkan (OFF)"
+    await message.reply(f"Katalog {display_name} berhasil {status_label}.")
+
+
+@router.message(Command("setindonesia", ignore_case=True))
+async def cmd_set_indonesia(message: Message):
+    """Admin command to turn Indonesia catalog on or off."""
+    await process_set_catalog_command(message, "indonesia", "Indonesia")
+
+
+@router.message(Command("setkorean", ignore_case=True))
+async def cmd_set_korean(message: Message):
+    """Admin command to turn Korean catalog on or off."""
+    await process_set_catalog_command(message, "korean", "Korea")
+
+
+@router.message(Command("setforeign", ignore_case=True))
+async def cmd_set_foreign(message: Message):
+    """Admin command to turn Foreign catalog on or off."""
+    await process_set_catalog_command(message, "foreign", "Foreign")
+
 
 
 # ---------------- PHOTO CARD RENDERER ----------------

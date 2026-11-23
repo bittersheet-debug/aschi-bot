@@ -53,6 +53,8 @@ from database import (
     backup_database,
     format_command,
     DEFAULT_GROUP_WELCOME_TEXT,
+    is_catalog_enabled,
+    set_catalog_status,
 )
 from captions import generate_aschen_caption
 from image_search import search_food_image
@@ -169,9 +171,8 @@ async def cmd_maurits(message: Message, state: FSMContext):
         f"• 🖼️ <b>D. Food Photo Settings</b> — Saklar auto search & upload foto manual\n"
         f"• 💬 <b>E. Caption Settings</b> — Kustomisasi caption roleplay ASCHEN\n"
         f"• 🛒 <b>F. Order Button Settings</b> — Atur nama & URL 2 tombol pemesanan\n"
-        f"• 🛡️ <b>G. Group Management</b> — Saklar kontrol moderasi & log aktivitas\n"
-        f"• ⚙️ <b>H. Bot Settings & Backup</b> — Pengaturan identitas & cadangan database\n"
-        f"• 👥 <b>I. Admin Access</b> — Tambah / hapus administrator resmi\n\n"
+        f"• ⚙️ <b>G. Bot Settings & Backup</b> — Pengaturan identitas & cadangan database\n"
+        f"• 👥 <b>H. Admin Access</b> — Tambah / hapus administrator resmi\n\n"
         f"{FOOTER_DECOR}"
     )
     await message.reply(text, reply_markup=build_admin_dashboard_keyboard(), parse_mode="HTML")
@@ -548,26 +549,62 @@ async def cb_admin_menu_root(callback: CallbackQuery):
     w_title = await get_setting("wedding_menu_title", "Wedding Menu Service")
     w_desc = await get_setting("wedding_menu_desc", "Layanan hidangan pernikahan eksklusif.")
 
+    indo_on = await is_catalog_enabled("indonesia")
+    korean_on = await is_catalog_enabled("korean")
+    foreign_on = await is_catalog_enabled("foreign")
+
     text = (
         f"{TITLE_DECOR}\n\n"
-        f"🍽️ <b>B. MENU & WEDDING MENU SETTINGS</b>\n\n"
+        f"🍽️ <b>B. MENU & KATALOG SETTINGS</b>\n\n"
         f"• <b>Wedding Menu Title:</b> {w_title}\n"
         f"• <b>Wedding Menu Deskripsi:</b> {w_desc}\n\n"
-        f"Tiga kategori utama yang terpisah:\n"
-        f"1. 🇮🇩 <b>Indonesian Food</b> (Command: <code>/indonesia</code>)\n"
-        f"2. 🇰🇷 <b>Korean Food</b> (Command: <code>/korean</code>)\n"
-        f"3. 🌎 <b>Foreign Food</b> (Command: <code>/foreign</code>)\n\n"
+        f"<b>Status Katalog Aktif:</b>\n"
+        f"• 🇮🇩 <b>Indonesia:</b> {'🟢 ON' if indo_on else '🔴 OFF'} (<code>/setindonesia on|off</code>)\n"
+        f"• 🇰🇷 <b>Korean:</b> {'🟢 ON' if korean_on else '🔴 OFF'} (<code>/setkorean on|off</code>)\n"
+        f"• 🌎 <b>Foreign:</b> {'🟢 ON' if foreign_on else '🔴 OFF'} (<code>/setforeign on|off</code>)\n\n"
         f"{FOOTER_DECOR}"
     )
 
     markup = InlineKeyboardMarkup(
         inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text=f"🇮🇩 Indonesia: {'ON ✅' if indo_on else 'OFF ❌'}",
+                    callback_data="admin_menu:toggle:indonesia"
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text=f"🇰🇷 Korean: {'ON ✅' if korean_on else 'OFF ❌'}",
+                    callback_data="admin_menu:toggle:korean"
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text=f"🌎 Foreign: {'ON ✅' if foreign_on else 'OFF ❌'}",
+                    callback_data="admin_menu:toggle:foreign"
+                ),
+            ],
             [InlineKeyboardButton(text="💍 Atur Judul Wedding Menu", callback_data="admin_menu:edit_wtitle")],
             [InlineKeyboardButton(text="📜 Atur Deskripsi Wedding Menu", callback_data="admin_menu:edit_wdesc")],
             [InlineKeyboardButton(text="🔙 BACK", callback_data="admin:main")],
         ]
     )
     await callback.message.edit_text(text, reply_markup=markup, parse_mode="HTML")
+
+
+@router.callback_query(F.data.startswith("admin_menu:toggle:"))
+async def cb_admin_menu_toggle(callback: CallbackQuery):
+    if not await ensure_admin(callback):
+        return
+    cat = callback.data.split(":")[2]
+    curr = await is_catalog_enabled(cat)
+    new_state = not curr
+    await set_catalog_status(cat, new_state)
+    state_str = "ON" if new_state else "OFF"
+    await callback.answer(f"Katalog {cat.capitalize()} diatur ke {state_str}!")
+    await cb_admin_menu_root(callback)
+
 
 
 @router.callback_query(F.data == "admin_menu:edit_wtitle")
@@ -1238,86 +1275,7 @@ async def cb_btn_preview(callback: CallbackQuery):
 
 
 # =========================================================
-# G. GROUP MANAGEMENT SETTINGS
-# =========================================================
-
-@router.callback_query(F.data == "admin_mod:root")
-async def cb_admin_mod_root(callback: CallbackQuery):
-    if not await ensure_admin(callback):
-        return
-    await callback.answer()
-
-    ban_on = await get_setting("mod_ban_enabled", "1") == "1"
-    mute_on = await get_setting("mod_mute_enabled", "1") == "1"
-    kick_on = await get_setting("mod_kick_enabled", "1") == "1"
-    unban_on = await get_setting("mod_unban_enabled", "1") == "1"
-    unmute_on = await get_setting("mod_unmute_enabled", "1") == "1"
-
-    text = (
-        f"{TITLE_DECOR}\n\n"
-        f"🛡️ <b>G. GROUP MANAGEMENT SETTINGS</b>\n\n"
-        f"Saklar status perintah moderasi grup:\n"
-        f"• /BAN: {'✅ ON' if ban_on else '❌ OFF'}\n"
-        f"• /MUTE: {'✅ ON' if mute_on else '❌ OFF'}\n"
-        f"• /KICK: {'✅ ON' if kick_on else '❌ OFF'}\n"
-        f"• /UNBAN: {'✅ ON' if unban_on else '❌ OFF'}\n"
-        f"• /UNMUTE: {'✅ ON' if unmute_on else '❌ OFF'}\n\n"
-        f"{FOOTER_DECOR}"
-    )
-
-    markup = InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(text=f"/BAN: {'✅' if ban_on else '❌'}", callback_data="toggle_setting_m:mod_ban_enabled:admin_mod:root"),
-                InlineKeyboardButton(text=f"/MUTE: {'✅' if mute_on else '❌'}", callback_data="toggle_setting_m:mod_mute_enabled:admin_mod:root"),
-            ],
-            [
-                InlineKeyboardButton(text=f"/KICK: {'✅' if kick_on else '❌'}", callback_data="toggle_setting_m:mod_kick_enabled:admin_mod:root"),
-                InlineKeyboardButton(text=f"/UNBAN: {'✅' if unban_on else '❌'}", callback_data="toggle_setting_m:mod_unban_enabled:admin_mod:root"),
-            ],
-            [InlineKeyboardButton(text=f"/UNMUTE: {'✅' if unmute_on else '❌'}", callback_data="toggle_setting_m:mod_unmute_enabled:admin_mod:root")],
-            [InlineKeyboardButton(text="📜 Lihat Moderation Logs", callback_data="admin_mod:logs")],
-            [InlineKeyboardButton(text="🔙 BACK", callback_data="admin:main")],
-        ]
-    )
-    await callback.message.edit_text(text, reply_markup=markup, parse_mode="HTML")
-
-
-@router.callback_query(F.data == "admin_mod:logs")
-async def cb_admin_mod_logs(callback: CallbackQuery):
-    logs = await get_recent_moderation_logs(limit=10)
-    await callback.answer()
-    if not logs:
-        text = "📜 Belum ada catatan moderasi di database."
-    else:
-        items = []
-        for l in logs:
-            items.append(f"• [<code>{l['created_at']}</code>] <b>{l['action']}</b> | Target: {l['user_name']} ({l['user_id']}) | Admin: {l['admin_name']}")
-        text = f"📜 <b>MODERATION LOGS TERAKHIR:</b>\n\n" + "\n".join(items)
-
-    await callback.message.edit_text(text, reply_markup=build_admin_back_keyboard("admin_mod:root"), parse_mode="HTML")
-
-
-# Generic Toggle Setting Handler
-@router.callback_query(F.data.startswith("toggle_setting_m:"))
-async def cb_toggle_setting_m(callback: CallbackQuery):
-    parts = callback.data.split(":")
-    key = parts[1]
-    dest = ":".join(parts[2:])
-
-    curr = await get_setting(key, "1")
-    new_v = "0" if curr == "1" else "1"
-    await set_setting(key, new_v)
-    await callback.answer("Pengaturan disimpan!")
-
-    if dest == "admin_mod:root":
-        await cb_admin_mod_root(callback)
-    elif dest == "admin_img:root":
-        await cb_admin_img_root(callback)
-
-
-# =========================================================
-# H. BOT SETTINGS & DATABASE BACKUP
+# G. BOT SETTINGS & DATABASE BACKUP
 # =========================================================
 
 @router.callback_query(F.data == "admin_bot:root")

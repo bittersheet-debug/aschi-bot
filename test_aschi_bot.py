@@ -28,7 +28,7 @@ from keyboards import (
     build_start_keyboard,
     build_food_order_keyboard,
 )
-from moderation import format_user_tag, get_admin_tag
+from moderation import format_user_tag
 from admin_dashboard import DENIED_TEXT
 from food_menu import generate_category_command_list
 
@@ -140,41 +140,83 @@ class TestAschiBotV3(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(await database.is_admin_or_owner(123456789))
         self.assertEqual(DENIED_TEXT, "ACCESS DENIED. ADMIN ONLY.")
 
-    # 7. Test Muted Members Tracking in Database
-    async def test_muted_members_tracking(self):
-        group_id = -100123456789
-        user_id = 555666777
+    # 7. Test Dynamic Catalog Control & Persistence
+    async def test_catalog_toggle_persistence(self):
+        # Default: all ON
+        self.assertTrue(await database.is_catalog_enabled("indonesia"))
+        self.assertTrue(await database.is_catalog_enabled("korean"))
+        self.assertTrue(await database.is_catalog_enabled("foreign"))
+        self.assertEqual(await database.get_active_catalogs(), ["indonesia", "korean", "foreign"])
 
-        # Initially not muted
-        self.assertFalse(await database.is_member_muted(group_id, user_id))
+        # Turn Indonesia OFF
+        await database.set_catalog_status("indonesia", False)
+        self.assertFalse(await database.is_catalog_enabled("indonesia"))
+        self.assertEqual(await database.get_active_catalogs(), ["korean", "foreign"])
 
-        # Mute user
-        await database.set_member_muted(group_id, user_id, 999999999, "@AdminMaurits")
-        self.assertTrue(await database.is_member_muted(group_id, user_id))
+        # Turn Korean OFF
+        await database.set_catalog_status("korean", False)
+        self.assertEqual(await database.get_active_catalogs(), ["foreign"])
 
-        rec = await database.get_muted_record(group_id, user_id)
-        self.assertIsNotNone(rec)
-        self.assertEqual(rec["admin_name"], "@AdminMaurits")
+        # Turn Foreign OFF -> All OFF
+        await database.set_catalog_status("foreign", False)
+        self.assertEqual(await database.get_active_catalogs(), [])
 
-        # Unmute user
-        await database.set_member_unmuted(group_id, user_id)
-        self.assertFalse(await database.is_member_muted(group_id, user_id))
+        # Turn Indonesia back ON
+        await database.set_catalog_status("indonesia", True)
+        self.assertTrue(await database.is_catalog_enabled("indonesia"))
+        self.assertEqual(await database.get_active_catalogs(), ["indonesia"])
 
-    # 8. Test User Registration and Lookup for Moderation (@username & numeric ID)
-    async def test_user_resolution_and_registration(self):
-        await database.register_user(111222, "JohnDoe", "John Doe")
+    # 8. Test /menu Display Logic
+    async def test_menu_display_logic(self):
+        # When all active
+        await database.set_catalog_status("indonesia", True)
+        await database.set_catalog_status("korean", True)
+        await database.set_catalog_status("foreign", True)
 
-        by_un = await database.get_user_by_username("johndoe")
-        self.assertIsNotNone(by_un)
-        self.assertEqual(by_un["user_id"], 111222)
+        active = await database.get_active_catalogs()
+        name_map = {"indonesia": "Indonesia", "korean": "Korean", "foreign": "Foreign"}
+        menu_text = "\n".join([f"- {name_map[cat]}" for cat in active])
+        self.assertIn("- Indonesia", menu_text)
+        self.assertIn("- Korean", menu_text)
+        self.assertIn("- Foreign", menu_text)
 
-        by_un_at = await database.get_user_by_username("@johndoe")
-        self.assertIsNotNone(by_un_at)
-        self.assertEqual(by_un_at["user_id"], 111222)
+        # When only Indonesia active
+        await database.set_catalog_status("korean", False)
+        await database.set_catalog_status("foreign", False)
+        active_indo_only = await database.get_active_catalogs()
+        menu_text_indo = "\n".join([f"- {name_map[cat]}" for cat in active_indo_only])
+        self.assertEqual(menu_text_indo, "- Indonesia")
 
-        by_id = await database.get_user_by_id(111222)
-        self.assertIsNotNone(by_id)
-        self.assertEqual(by_id["username"], "JohnDoe")
+        # When all OFF -> "Saat ini katalog belum tersedia."
+        await database.set_catalog_status("indonesia", False)
+        active_none = await database.get_active_catalogs()
+        self.assertEqual(len(active_none), 0)
+        empty_msg = "Saat ini katalog belum tersedia." if not active_none else ""
+        self.assertEqual(empty_msg, "Saat ini katalog belum tersedia.")
+
+    # 9. Test Moderation Commands Removed from Setup
+    async def test_moderation_commands_removed(self):
+        from bot import setup_bot_commands
+        from unittest.mock import AsyncMock, MagicMock
+        mock_bot = MagicMock()
+        mock_bot.set_my_commands = AsyncMock()
+
+        await setup_bot_commands(mock_bot)
+        mock_bot.set_my_commands.assert_called_once()
+        registered_cmds = [cmd.command for cmd in mock_bot.set_my_commands.call_args[0][0]]
+
+        # Ensure moderation commands are completely removed
+        self.assertNotIn("ban", registered_cmds)
+        self.assertNotIn("mute", registered_cmds)
+        self.assertNotIn("kick", registered_cmds)
+        self.assertNotIn("unban", registered_cmds)
+        self.assertNotIn("unmute", registered_cmds)
+
+        # Ensure menu and categories are present
+        self.assertIn("menu", registered_cmds)
+        self.assertIn("indonesia", registered_cmds)
+        self.assertIn("korean", registered_cmds)
+        self.assertIn("foreign", registered_cmds)
 
     # 9. Test Group Welcome Settings and Template
     async def test_group_welcome_settings(self):

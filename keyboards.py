@@ -61,9 +61,8 @@ def build_admin_dashboard_keyboard() -> InlineKeyboardMarkup:
             [InlineKeyboardButton(text="🖼️ D. Food Photo Settings", callback_data="admin_img:root")],
             [InlineKeyboardButton(text="💬 E. Caption Settings", callback_data="admin_caption:root")],
             [InlineKeyboardButton(text="🛒 F. Order Button Settings", callback_data="admin_btn:root")],
-            [InlineKeyboardButton(text="🛡️ G. Group Management Settings", callback_data="admin_mod:root")],
-            [InlineKeyboardButton(text="⚙️ H. Bot Settings & Backup", callback_data="admin_bot:root")],
-            [InlineKeyboardButton(text="👥 I. Admin Access Control", callback_data="admin_acc:root")],
+            [InlineKeyboardButton(text="⚙️ G. Bot Settings & Backup", callback_data="admin_bot:root")],
+            [InlineKeyboardButton(text="👥 H. Admin Access Control", callback_data="admin_acc:root")],
             [InlineKeyboardButton(text="🏠 TUTUP DASHBOARD", callback_data="nav:home")],
         ]
     )

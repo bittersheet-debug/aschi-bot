@@ -183,6 +183,9 @@ async def init_db():
             "btn_group_label": "GROUP MANAGEMENT",
             "wedding_menu_title": "Wedding Menu Service",
             "wedding_menu_desc": "Layanan hidangan pernikahan eksklusif dari ASCHEN EVENT ORGANIZER.",
+            "catalog_indonesia_enabled": "1",
+            "catalog_korean_enabled": "1",
+            "catalog_foreign_enabled": "1",
             "group_welcome_enabled": "1",
             "group_welcome_text": DEFAULT_GROUP_WELCOME_TEXT,
             "group_welcome_media_type": "none",
@@ -538,6 +541,30 @@ async def get_all_settings() -> Dict[str, str]:
         async with db.execute("SELECT key, value FROM settings") as cursor:
             rows = await cursor.fetchall()
             return {row[0]: row[1] for row in rows}
+
+
+# ---------------- CATALOG STATUS MANAGEMENT ----------------
+async def is_catalog_enabled(category: str) -> bool:
+    """Checks whether a catalog category ('indonesia', 'korean', 'foreign') is active (ON)."""
+    cat = category.strip().lower()
+    val = await get_setting(f"catalog_{cat}_enabled", "1")
+    return val == "1"
+
+
+async def set_catalog_status(category: str, enabled: bool):
+    """Sets a catalog category to enabled ('1') or disabled ('0')."""
+    cat = category.strip().lower()
+    await set_setting(f"catalog_{cat}_enabled", "1" if enabled else "0")
+
+
+async def get_active_catalogs() -> List[str]:
+    """Returns list of active catalog categories in canonical order."""
+    active = []
+    for cat in ["indonesia", "korean", "foreign"]:
+        if await is_catalog_enabled(cat):
+            active.append(cat)
+    return active
+
 
 
 # ---------------- ADMIN MANAGEMENT ----------------

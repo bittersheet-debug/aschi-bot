@@ -38,14 +38,10 @@ async def setup_bot_commands(bot: Bot):
     commands = [
         BotCommand(command="start", description="Mulai ASCHI BOT"),
         BotCommand(command="help", description="Panduan & daftar command"),
+        BotCommand(command="menu", description="Daftar katalog aktif"),
         BotCommand(command="indonesia", description="Katalog Indonesian Food 🇮🇩"),
         BotCommand(command="korean", description="Katalog Korean Food 🇰🇷"),
         BotCommand(command="foreign", description="Katalog Foreign Food 🌎"),
-        BotCommand(command="ban", description="Blokir anggota grup"),
-        BotCommand(command="mute", description="Batasi anggota grup"),
-        BotCommand(command="kick", description="Keluarkan anggota grup"),
-        BotCommand(command="unban", description="Buka blokir anggota"),
-        BotCommand(command="unmute", description="Pulihkan izin pesan anggota"),
     ]
     try:
         await bot.set_my_commands(commands, scope=BotCommandScopeDefault())

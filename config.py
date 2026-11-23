@@ -29,6 +29,7 @@ ORDER_URL = "https://t.me/ASCHENEO"
 # Telegram Bot Token & Owner ID
 BOT_TOKEN = os.getenv("BOT_TOKEN", "")
 OWNER_ID = int(os.getenv("OWNER_ID", "0")) if os.getenv("OWNER_ID", "0").isdigit() else 0
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "ASCHEN2026")
 
 # Database
 if os.getenv("VERCEL"):

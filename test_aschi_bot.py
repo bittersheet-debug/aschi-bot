@@ -134,11 +134,16 @@ class TestAschiBotV3(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(res["found"])
             self.assertIn("http", res["url"])
 
-    # 6. Test /maurits Access Control
+    # 6. Test /maurits Access Control & Password
     async def test_maurits_access(self):
         self.assertTrue(await database.is_admin_or_owner(999999999))
         self.assertFalse(await database.is_admin_or_owner(123456789))
         self.assertEqual(DENIED_TEXT, "ACCESS DENIED. ADMIN ONLY.")
+
+        from config import ADMIN_PASSWORD
+        self.assertEqual(ADMIN_PASSWORD, "ASCHEN2026")
+        pw_in_db = await database.get_setting("admin_password", "ASCHEN2026")
+        self.assertEqual(pw_in_db, "ASCHEN2026")
 
     # 7. Test Dynamic Catalog Control & Persistence
     async def test_catalog_toggle_persistence(self):

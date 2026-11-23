@@ -186,6 +186,7 @@ async def init_db():
             "catalog_indonesia_enabled": "1",
             "catalog_korean_enabled": "1",
             "catalog_foreign_enabled": "1",
+            "admin_password": "ASCHEN2026",
             "group_welcome_enabled": "1",
             "group_welcome_text": DEFAULT_GROUP_WELCOME_TEXT,
             "group_welcome_media_type": "none",

@@ -32,6 +32,7 @@ from config import (
     TITLE_DECOR,
     FOOTER_DECOR,
     OWNER_ID,
+    ADMIN_PASSWORD,
     ORDER_URL,
     CONTACT_URL,
     OFFICIAL_ORGANIZER,
@@ -118,6 +119,10 @@ class AdminAccessState(StatesGroup):
     waiting_user_id = State()
 
 
+class AdminAuthState(StatesGroup):
+    waiting_password = State()
+
+
 class GroupWelcomeState(StatesGroup):
     waiting_welcome_text = State()
     waiting_welcome_photo = State()
@@ -145,24 +150,12 @@ async def ensure_admin(event: Message | CallbackQuery) -> bool:
     return True
 
 
-# ---------------- /maurits ENTRY POINT ----------------
-
-@router.message(Command("maurits", ignore_case=True))
-@router.message(Command("adminaschi", ignore_case=True))
-async def cmd_maurits(message: Message, state: FSMContext):
-    """
-    Main Admin Dashboard Command (/maurits).
-    Rejects unauthorized users with 'ACCESS DENIED. ADMIN ONLY.'
-    """
-    await state.clear()
-    if not await ensure_admin(message):
-        return
-
-    text = (
+def render_maurits_dashboard_text(user_full_name: str) -> str:
+    return (
         f"{TITLE_DECOR}\n\n"
         f"⚙️ <b>ASCHI BOT — ADMIN SETTINGS (/maurits)</b>\n"
         f"<i>Pusat Pengaturan Resmi ASCHEN EVENT ORGANIZER</i>\n\n"
-        f"Selamat datang, <b>{message.from_user.full_name}</b>.\n"
+        f"Selamat datang, <b>{user_full_name}</b>.\n"
         f"Silakan pilih menu pengaturan di bawah ini:\n\n"
         f"• 🎉 <b>WELCOME MANAGEMENT</b> — Sambutan otomatis grup (Teks, Foto, GIF, Video, Durasi)\n"
         f"• 📝 <b>A. Welcome Settings (/start)</b> — Pesan sambutan & 3 tombol awal\n"
@@ -175,7 +168,61 @@ async def cmd_maurits(message: Message, state: FSMContext):
         f"• 👥 <b>H. Admin Access</b> — Tambah / hapus administrator resmi\n\n"
         f"{FOOTER_DECOR}"
     )
-    await message.reply(text, reply_markup=build_admin_dashboard_keyboard(), parse_mode="HTML")
+
+
+# ---------------- /maurits ENTRY POINT WITH PASSWORD VERIFICATION ----------------
+
+@router.message(Command("maurits", ignore_case=True))
+@router.message(Command("adminaschi", ignore_case=True))
+async def cmd_maurits(message: Message, state: FSMContext):
+    """
+    Main Admin Dashboard Command (/maurits).
+    Requires password 'ASCHEN2026' before granting access.
+    """
+    await state.clear()
+    args = message.text.split()[1:] if message.text else []
+    admin_pw = await get_setting("admin_password", ADMIN_PASSWORD)
+
+    # If password is provided in command line: e.g. /maurits ASCHEN2026
+    if args:
+        if args[0].strip() == admin_pw:
+            await add_admin(message.from_user.id, message.from_user.username or message.from_user.full_name, message.from_user.id)
+            dashboard_text = render_maurits_dashboard_text(message.from_user.full_name)
+            await message.reply(dashboard_text, reply_markup=build_admin_dashboard_keyboard(), parse_mode="HTML")
+            return
+        else:
+            await message.reply("⛔ <b>Kata sandi salah.</b> Akses ditolak.", parse_mode="HTML")
+            return
+
+    # Prompt user for password
+    await state.set_state(AdminAuthState.waiting_password)
+    prompt_text = (
+        f"{TITLE_DECOR}\n\n"
+        f"🔐 <b>KATA SANDI ADMIN DIPERLUKAN</b>\n\n"
+        f"Silakan ketikkan kata sandi untuk mengakses menu pengaturan <b>/maurits</b>:\n\n"
+        f"{FOOTER_DECOR}"
+    )
+    await message.reply(prompt_text, reply_markup=build_cancel_keyboard("Batal"), parse_mode="HTML")
+
+
+@router.message(AdminAuthState.waiting_password)
+async def process_admin_password(message: Message, state: FSMContext):
+    """Verifies the password for /maurits access."""
+    entered_pw = message.text.strip() if message.text else ""
+    admin_pw = await get_setting("admin_password", ADMIN_PASSWORD)
+
+    if entered_pw == admin_pw:
+        await state.clear()
+        await add_admin(message.from_user.id, message.from_user.username or message.from_user.full_name, message.from_user.id)
+        dashboard_text = render_maurits_dashboard_text(message.from_user.full_name)
+        await message.reply(
+            f"✅ <b>Kata sandi benar. Akses diterima!</b>\n\n{dashboard_text}",
+            reply_markup=build_admin_dashboard_keyboard(),
+            parse_mode="HTML"
+        )
+    else:
+        await state.clear()
+        await message.reply("⛔ <b>Kata sandi salah.</b> Akses ditolak.", parse_mode="HTML")
 
 
 @router.callback_query(F.data == "admin:main")
@@ -186,12 +233,12 @@ async def cb_admin_main(callback: CallbackQuery, state: FSMContext):
         return
     await callback.answer()
 
-    text = (
-        f"{TITLE_DECOR}\n\n"
-        f"⚙️ <b>ASCHI BOT — ADMIN SETTINGS (/maurits)</b>\n"
-        f"Silakan pilih modul pengaturan di bawah ini:\n\n"
-        f"{FOOTER_DECOR}"
-    )
+    text = render_maurits_dashboard_text(callback.from_user.full_name)
+    try:
+        await callback.message.edit_text(text, reply_markup=build_admin_dashboard_keyboard(), parse_mode="HTML")
+    except Exception:
+        await callback.message.answer(text, reply_markup=build_admin_dashboard_keyboard(), parse_mode="HTML")
+
     try:
         await callback.message.edit_text(text, reply_markup=build_admin_dashboard_keyboard(), parse_mode="HTML")
     except Exception:
